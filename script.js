@@ -1,153 +1,82 @@
 const today = new Date();
-const iso = (d) => d.toISOString().split("T")[0];
+const iso = (date) => date.toISOString().split("T")[0];
+const tomorrow = new Date(today);
+tomorrow.setDate(tomorrow.getDate() + 1);
 
 const setDefaultDates = () => {
-  const checkin = document.getElementById("checkin");
-  const checkout = document.getElementById("checkout");
-  const enqCheckin = document.getElementById("enqCheckin");
-  const enqCheckout = document.getElementById("enqCheckout");
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-
-  if (checkin) checkin.min = iso(today);
-  if (checkout) checkout.min = iso(tomorrow);
-  if (enqCheckin) enqCheckin.min = iso(today);
-  if (enqCheckout) enqCheckout.min = iso(tomorrow);
-
-  if (checkin) checkin.value = iso(today);
-  if (checkout) checkout.value = iso(tomorrow);
-  if (enqCheckin) enqCheckin.value = iso(today);
-  if (enqCheckout) enqCheckout.value = iso(tomorrow);
+  document.querySelectorAll('input[type="date"]').forEach((input) => {
+    input.min = iso(today);
+    if (!input.value) input.value = input.id.toLowerCase().includes("checkout") ? iso(tomorrow) : iso(today);
+  });
 };
 
 const updateEstimate = () => {
-  const roomType = document.getElementById("roomType");
-  const roomCount = document.getElementById("roomCount");
+  const room = document.getElementById("roomType");
+  const rooms = document.getElementById("roomCount");
   const checkin = document.getElementById("checkin");
   const checkout = document.getElementById("checkout");
   const estimate = document.getElementById("estimate");
-
-  if (!roomType || !roomCount || !checkin || !checkout || !estimate) return;
-
-  const rate = Number(roomType.value);
-  const count = Number(roomCount.value);
-
-  if (!checkin.value || !checkout.value) {
-    estimate.textContent = `PKR ${rate.toLocaleString()}`;
-    return;
-  }
+  if (!room || !rooms || !checkin || !checkout || !estimate) return;
 
   const start = new Date(checkin.value);
   const end = new Date(checkout.value);
-
-  if (end <= start) {
-    estimate.textContent = `PKR ${rate.toLocaleString()}`;
-    return;
-  }
-
-  const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
-  const total = diffDays * rate * count;
-  estimate.textContent = `PKR ${total.toLocaleString()}`;
+  const nights = end > start ? Math.ceil((end - start) / 86400000) : 1;
+  estimate.textContent = `PKR ${(Number(room.value) * Number(rooms.value) * nights).toLocaleString()}`;
 };
 
-const handleBookingSubmit = (event) => {
+const submitBooking = async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const payload = {
+    name: form.querySelector("#guestName, #name")?.value,
+    phone: form.querySelector("#guestPhone, #phone")?.value,
+    email: form.querySelector("#guestEmail, #email")?.value || "",
+    checkin: form.querySelector("#checkin, #enqCheckin")?.value,
+    checkout: form.querySelector("#checkout, #enqCheckout")?.value,
+    room: form.querySelector("#roomType")?.selectedOptions[0]?.text.split(" —")[0] || form.querySelector("#enqRoom")?.value,
+    rooms: form.querySelector("#roomCount")?.value || 1,
+    guests: form.querySelector("#guests")?.value || 2,
+    message: form.querySelector("#guestMessage, #message")?.value || ""
+  };
 
-  const roomType = document.getElementById("roomType");
-  const estimate = document.getElementById("estimate");
-  const selectedRoom = roomType ? roomType.options[roomType.selectedIndex].text : "Selected room";
-
-  alert(`${selectedRoom} selected. Estimated total: ${estimate ? estimate.textContent : "PKR 0"}. We will contact you shortly to confirm your reservation.`);
-};
-
-const handleEnquirySubmit = (event) => {
-  event.preventDefault();
-  alert("Your enquiry has been sent successfully. Our reservation team will contact you shortly.");
-  event.target.reset();
-  setDefaultDates();
-};
-
-const setupMenuToggle = () => {
-  const menuButton = document.querySelector(".menu-toggle");
-  const nav = document.querySelector(".main-nav");
-  const navActions = document.querySelector(".nav-actions");
-
-  if (!menuButton || !nav || !navActions) return;
-
-  menuButton.addEventListener("click", () => {
-    nav.classList.toggle("mobile-open");
-    navActions.classList.toggle("mobile-open");
-  });
-};
-
-const setupResponsiveNav = () => {
-  const nav = document.querySelector(".main-nav");
-  const navActions = document.querySelector(".nav-actions");
-
-  if (!nav || !navActions) return;
-
-  if (window.innerWidth <= 980) {
-    nav.style.display = "flex";
-    nav.style.flexDirection = "column";
-    nav.style.position = "absolute";
-    nav.style.top = "86px";
-    nav.style.left = "16px";
-    nav.style.right = "16px";
-    nav.style.background = "rgba(17, 24, 39, 0.96)";
-    nav.style.border = "1px solid rgba(255,255,255,0.08)";
-    nav.style.borderRadius = "16px";
-    nav.style.padding = "16px";
-    nav.style.opacity = "0";
-    nav.style.pointerEvents = "none";
-    navActions.style.display = "flex";
-    navActions.style.position = "absolute";
-    navActions.style.top = "calc(86px + 260px)";
-    navActions.style.left = "16px";
-    navActions.style.right = "16px";
-    navActions.style.opacity = "0";
-    navActions.style.pointerEvents = "none";
-  } else {
-    nav.style = "";
-    navActions.style = "";
+  button.disabled = true;
+  button.textContent = "Sending...";
+  try {
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to submit booking.");
+    alert(`Thank you, ${result.booking.name}. Your reservation reference is ${result.booking.reference}. Our team will contact you shortly.`);
+    form.reset();
+    setDefaultDates();
+    updateEstimate();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Send Enquiry";
   }
 };
 
-window.addEventListener("DOMContentLoaded", () => {
+const setupMobileMenu = () => {
+  const toggle = document.querySelector(".menu-toggle");
+  const nav = document.querySelector(".main-nav");
+  if (!toggle || !nav) return;
+  toggle.addEventListener("click", () => nav.classList.toggle("is-open"));
+};
+
+document.addEventListener("DOMContentLoaded", () => {
   setDefaultDates();
   updateEstimate();
-  setupMenuToggle();
-  setupResponsiveNav();
-
-  const roomType = document.getElementById("roomType");
-  const roomCount = document.getElementById("roomCount");
-  const checkin = document.getElementById("checkin");
-  const checkout = document.getElementById("checkout");
-
-  [roomType, roomCount, checkin, checkout].forEach((el) => {
-    if (el) el.addEventListener("input", updateEstimate);
-    if (el) el.addEventListener("change", updateEstimate);
+  setupMobileMenu();
+  ["roomType", "roomCount", "checkin", "checkout"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", updateEstimate);
   });
-
-  const bookingForm = document.getElementById("bookingForm");
-  const enquiryForm = document.getElementById("enquiryForm");
-
-  if (bookingForm) bookingForm.addEventListener("submit", handleBookingSubmit);
-  if (enquiryForm) enquiryForm.addEventListener("submit", handleEnquirySubmit);
-
-  window.addEventListener("resize", setupResponsiveNav);
+  document.querySelectorAll("#bookingForm, #enquiryForm, .booking-page-form").forEach((form) => {
+    form.addEventListener("submit", submitBooking);
+  });
 });
-
-const nav = document.querySelector(".main-nav");
-const navActions = document.querySelector(".nav-actions");
-const menuButton = document.querySelector(".menu-toggle");
-
-if (nav && navActions && menuButton) {
-  menuButton.addEventListener("click", () => {
-    const isOpen = nav.style.opacity === "1";
-    nav.style.opacity = isOpen ? "0" : "1";
-    nav.style.pointerEvents = isOpen ? "none" : "auto";
-    navActions.style.opacity = isOpen ? "0" : "1";
-    navActions.style.pointerEvents = isOpen ? "none" : "auto";
-  });
-}
